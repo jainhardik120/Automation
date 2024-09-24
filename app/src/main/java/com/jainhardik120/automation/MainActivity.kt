@@ -21,7 +21,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,11 +54,8 @@ class MainActivity : ComponentActivity() {
     private var isBound = false
     private var isServiceRunning = false
 
-    private val TAG = "MainActivity"
-
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(p0: ComponentName?, binder: IBinder?) {
-            Log.d(TAG, "onServiceConnected: Service Connected")
             service = (binder as BleForegroundService.BLEBinder).getService()
             isBound = true
 
@@ -63,18 +63,6 @@ class MainActivity : ComponentActivity() {
                 binder.scannedDevices.collectLatest {
                     bluetoothDeviceList.value = it
                 }
-//                p1.currentValue().collectLatest {
-//                    currentValue.value = it
-//                }
-//                p1.isScanning().collectLatest {
-//                    Log.d("TAG", "onServiceConnected: ${it}")
-//                    isScanning.value = it
-//                }
-//                p1.deviceList().collectLatest {
-//                    Log.d("TAG", "onServiceConnected: ${it}")
-//
-//                    bluetoothDeviceList.value = it
-//                }
             }
         }
 
@@ -125,7 +113,18 @@ class MainActivity : ComponentActivity() {
                         }) {
                             Text("Scan Devices")
                         }
-                        Text("Device List : $dl")
+                        LazyColumn {
+                            itemsIndexed(dl) { index, item ->
+                                OutlinedCard(
+                                    onClick = {
+                                        service?.connectToDevice(item.address)
+                                    }
+                                ) {
+                                    Text(item.name?:"N/A")
+                                    Text(item.address)
+                                }
+                            }
+                        }
                     }
                 }
             }
