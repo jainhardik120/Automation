@@ -39,6 +39,8 @@ class BleForegroundService : Service() {
         const val CHANNEL_NAME = "Macro pad controller"
         private const val GATT_CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
         private const val SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+        private const val LED_CHARACTERISTIC_UUID = "beb5483f-36e1-4688-b7f5-ea07361b26a8"
+        private const val LED_SERVICE_UUID = "4fafc202-1fb5-459e-8fcc-c5c9c331914b"
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -118,7 +120,8 @@ class BleForegroundService : Service() {
     }
 
     private var bluetoothGatt: BluetoothGatt? = null
-    private var gattCharacteristic: BluetoothGattCharacteristic? = null
+    private var keypadCharacteristic: BluetoothGattCharacteristic? = null
+    private var ledCharacteristic: BluetoothGattCharacteristic? = null
 
 
     private fun hasPermission(permission: String): Boolean {
@@ -160,6 +163,15 @@ class BleForegroundService : Service() {
         }
     }
 
+    private fun sendLedState(state: Int) {
+        ledCharacteristic?.let { characteristic ->
+            val byteArray = byteArrayOf(state.toByte())
+            characteristic.value = byteArray
+            bluetoothGatt?.writeCharacteristic(characteristic)
+            Log.d(TAG, "Sent LED state: $state")
+        } ?: Log.e(TAG, "Characteristic is not available")
+    }
+
 
     private fun enableNotificationForCharacteristic(
         gatt: BluetoothGatt,
@@ -189,18 +201,15 @@ class BleForegroundService : Service() {
 
         override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
             super.onServicesDiscovered(gatt, status)
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                Log.d(TAG, "Service discovery completed.")
-                val service = gatt?.getService(java.util.UUID.fromString(SERVICE_UUID))
-                gattCharacteristic =
-                    service?.getCharacteristic(java.util.UUID.fromString(GATT_CHARACTERISTIC_UUID))
-                if (gattCharacteristic != null) {
-                    if (gatt != null) {
-                        enableNotificationForCharacteristic(gatt, gattCharacteristic!!)
-                    }
+            if (gatt != null && status == BluetoothGatt.GATT_SUCCESS) {
+                val keypadService = gatt.getService(java.util.UUID.fromString(SERVICE_UUID))
+                val ledService = gatt.getService(java.util.UUID.fromString(LED_SERVICE_UUID))
+                keypadCharacteristic = keypadService?.getCharacteristic(java.util.UUID.fromString(GATT_CHARACTERISTIC_UUID))
+                ledCharacteristic = ledService?.getCharacteristic(java.util.UUID.fromString(
+                    LED_CHARACTERISTIC_UUID))
+                if (keypadCharacteristic != null) {
+                    enableNotificationForCharacteristic(gatt, keypadCharacteristic!!)
                 }
-            } else {
-                Log.e(TAG, "Service discovery failed with status: $status")
             }
         }
 
@@ -219,14 +228,22 @@ class BleForegroundService : Service() {
         }
     }
 
+    private var counter = 0
+
     private fun sendKeyNotification(key: String) {
+
+        sendLedState(counter)
+        counter++
+        counter%=16
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Key Pressed")
             .setContentText("Key $key was pressed")
             .build()
 
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager =
+            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify((System.currentTimeMillis() % 10000).toInt(), notification)
     }
 
