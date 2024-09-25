@@ -43,16 +43,35 @@ class BleForegroundService : Service() {
         private const val LED_SERVICE_UUID = "4fafc202-1fb5-459e-8fcc-c5c9c331914b"
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            Actions.START.toString() -> start()
-            Actions.STOP.toString() -> stopSelf()
-        }
-        return super.onStartCommand(intent, flags, startId)
-    }
-
     private val binder = BLEBinder()
     private val _scannedDevices = MutableStateFlow(emptyList<BluetoothDevice>())
+    private val bluetoothManager by lazy {
+        this.getSystemService(BluetoothManager::class.java)
+    }
+    private val bluetoothAdapter: BluetoothAdapter? by lazy {
+        bluetoothManager.adapter
+    }
+    private val bluetoothLeScanner by lazy {
+        bluetoothAdapter?.bluetoothLeScanner
+    }
+    private val notificationManager by lazy {
+        this.getSystemService(NotificationManager::class.java)
+    }
+    private var bluetoothGatt: BluetoothGatt? = null
+    private var keypadCharacteristic: BluetoothGattCharacteristic? = null
+    private var ledCharacteristic: BluetoothGattCharacteristic? = null
+
+    private var scanning = false
+    private val handler = Handler()
+
+    private var counter = 0
+
+    private fun hasPermission(permission: String): Boolean {
+        return (ActivityCompat.checkSelfPermission(
+            this,
+            permission
+        ) == PackageManager.PERMISSION_GRANTED)
+    }
 
     inner class BLEBinder : Binder() {
         fun getService() = this@BleForegroundService
@@ -65,15 +84,12 @@ class BleForegroundService : Service() {
         return binder
     }
 
-    private fun start() {
-        val notification = createNotification("Waiting for device to connect...")
-        startForeground(
-            1, notification, if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-            } else {
-                0
-            }
-        )
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            Actions.START.toString() -> start()
+            Actions.STOP.toString() -> stopSelf()
+        }
+        return super.onStartCommand(intent, flags, startId)
     }
 
     private fun createNotification(text: String): Notification {
@@ -86,6 +102,14 @@ class BleForegroundService : Service() {
             .build()
     }
 
+    private fun start() {
+        val notification = createNotification("Waiting for device to connect...")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+        } else {
+            startForeground(1, notification)
+        }
+    }
 
     private val leScanCallback: ScanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -102,39 +126,6 @@ class BleForegroundService : Service() {
             Log.e(TAG, "onScanFailed: Scan failed $errorCode")
         }
     }
-
-    private val bluetoothManager by lazy {
-        this.getSystemService(BluetoothManager::class.java)
-    }
-
-    private val bluetoothAdapter: BluetoothAdapter? by lazy {
-        bluetoothManager.adapter
-    }
-
-    private val bluetoothLeScanner by lazy {
-        bluetoothAdapter?.bluetoothLeScanner
-    }
-
-    private val notificationManager by lazy {
-        this.getSystemService(NotificationManager::class.java)
-    }
-
-    private var bluetoothGatt: BluetoothGatt? = null
-    private var keypadCharacteristic: BluetoothGattCharacteristic? = null
-    private var ledCharacteristic: BluetoothGattCharacteristic? = null
-
-
-    private fun hasPermission(permission: String): Boolean {
-        return (ActivityCompat.checkSelfPermission(
-            this,
-            permission
-        ) == PackageManager.PERMISSION_GRANTED)
-    }
-
-
-    private var scanning = false
-    private val handler = Handler()
-
 
     @SuppressLint("MissingPermission")
     fun scanLeDevice() {
@@ -163,16 +154,24 @@ class BleForegroundService : Service() {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun sendLedState(state: Int) {
         ledCharacteristic?.let { characteristic ->
             val byteArray = byteArrayOf(state.toByte())
-            characteristic.value = byteArray
-            bluetoothGatt?.writeCharacteristic(characteristic)
-            Log.d(TAG, "Sent LED state: $state")
-        } ?: Log.e(TAG, "Characteristic is not available")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                bluetoothGatt?.writeCharacteristic(
+                    characteristic,
+                    byteArray,
+                    BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                )
+            } else {
+                characteristic.value = byteArray
+                bluetoothGatt?.writeCharacteristic(characteristic)
+            }
+        }
     }
 
-
+    @SuppressLint("MissingPermission")
     private fun enableNotificationForCharacteristic(
         gatt: BluetoothGatt,
         characteristic: BluetoothGattCharacteristic
@@ -180,11 +179,15 @@ class BleForegroundService : Service() {
         gatt.setCharacteristicNotification(characteristic, true)
         val descriptor =
             characteristic.getDescriptor(java.util.UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
-        descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-        gatt.writeDescriptor(descriptor)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+        } else {
+            descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            gatt.writeDescriptor(descriptor)
+        }
     }
 
-
+    @SuppressLint("MissingPermission")
     private val bluetoothGattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
             var updatedNotification: Notification? = null
@@ -204,9 +207,14 @@ class BleForegroundService : Service() {
             if (gatt != null && status == BluetoothGatt.GATT_SUCCESS) {
                 val keypadService = gatt.getService(java.util.UUID.fromString(SERVICE_UUID))
                 val ledService = gatt.getService(java.util.UUID.fromString(LED_SERVICE_UUID))
-                keypadCharacteristic = keypadService?.getCharacteristic(java.util.UUID.fromString(GATT_CHARACTERISTIC_UUID))
-                ledCharacteristic = ledService?.getCharacteristic(java.util.UUID.fromString(
-                    LED_CHARACTERISTIC_UUID))
+                keypadCharacteristic = keypadService?.getCharacteristic(
+                    java.util.UUID.fromString(GATT_CHARACTERISTIC_UUID)
+                )
+                ledCharacteristic = ledService?.getCharacteristic(
+                    java.util.UUID.fromString(
+                        LED_CHARACTERISTIC_UUID
+                    )
+                )
                 if (keypadCharacteristic != null) {
                     enableNotificationForCharacteristic(gatt, keypadCharacteristic!!)
                 }
@@ -214,27 +222,23 @@ class BleForegroundService : Service() {
         }
 
         override fun onCharacteristicChanged(
-            gatt: BluetoothGatt?,
-            characteristic: BluetoothGattCharacteristic?
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray
         ) {
-            super.onCharacteristicChanged(gatt, characteristic)
-            if (characteristic?.uuid == java.util.UUID.fromString(GATT_CHARACTERISTIC_UUID)) {
-                val value = characteristic?.getStringValue(0)
-                Log.d(TAG, "Characteristic notification received: $value")
-                if (value != null) {
-                    sendKeyNotification(value)
-                }
+            super.onCharacteristicChanged(gatt, characteristic, value)
+            if (characteristic.uuid == java.util.UUID.fromString(GATT_CHARACTERISTIC_UUID)) {
+                val stringValue = value.toString(Charsets.UTF_8)
+                sendKeyNotification(stringValue)
             }
         }
     }
 
-    private var counter = 0
 
     private fun sendKeyNotification(key: String) {
-
         sendLedState(counter)
         counter++
-        counter%=16
+        counter %= 16
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
@@ -247,6 +251,7 @@ class BleForegroundService : Service() {
         notificationManager.notify((System.currentTimeMillis() % 10000).toInt(), notification)
     }
 
+    @SuppressLint("MissingPermission")
     fun connectToDevice(address: String): Boolean {
         bluetoothAdapter?.let { adapter ->
             try {
@@ -263,9 +268,12 @@ class BleForegroundService : Service() {
         }
     }
 
+    @SuppressLint("MissingPermission")
     override fun onDestroy() {
-        bluetoothGatt?.disconnect()
-        bluetoothGatt?.close()
+        if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+            bluetoothGatt?.disconnect()
+            bluetoothGatt?.close()
+        }
         super.onDestroy()
     }
 }
