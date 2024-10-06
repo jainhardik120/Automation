@@ -1,11 +1,18 @@
-package com.jainhardik120.automation
+package com.jainhardik120.automation.data
 
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.Service
-import android.bluetooth.*
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
@@ -17,21 +24,21 @@ import android.os.Binder
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import com.jainhardik120.automation.R
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
+data class ServiceState(
+    val deviceList: List<BluetoothDevice> = emptyList()
+)
 
 @AndroidEntryPoint
 class BleForegroundService : Service() {
-
-    enum class Actions {
-        START, STOP
-    }
 
     companion object {
         private const val TAG = "BluetoothService"
@@ -44,7 +51,7 @@ class BleForegroundService : Service() {
     }
 
     private val binder = BLEBinder()
-    private val _scannedDevices = MutableStateFlow(emptyList<BluetoothDevice>())
+    private val _state = MutableStateFlow(ServiceState())
     private val bluetoothManager by lazy {
         this.getSystemService(BluetoothManager::class.java)
     }
@@ -62,9 +69,10 @@ class BleForegroundService : Service() {
     private var ledCharacteristic: BluetoothGattCharacteristic? = null
 
     private var scanning = false
-    private val handler = Handler()
+    private var handler: Handler? = null
 
-    private var counter = 0
+    private var serviceRunning = false
+
 
     private fun hasPermission(permission: String): Boolean {
         return (ActivityCompat.checkSelfPermission(
@@ -76,8 +84,8 @@ class BleForegroundService : Service() {
     inner class BLEBinder : Binder() {
         fun getService() = this@BleForegroundService
 
-        val scannedDevices: StateFlow<List<BluetoothDevice>>
-            get() = _scannedDevices.asStateFlow()
+        val state: StateFlow<ServiceState>
+            get() = _state
     }
 
     override fun onBind(p0: Intent?): IBinder {
@@ -85,9 +93,9 @@ class BleForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            Actions.START.toString() -> start()
-            Actions.STOP.toString() -> stopSelf()
+        if (!serviceRunning) {
+            serviceRunning = true
+            start()
         }
         return super.onStartCommand(intent, flags, startId)
     }
@@ -115,8 +123,12 @@ class BleForegroundService : Service() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             super.onScanResult(callbackType, result)
             result.device?.let {
-                if (!_scannedDevices.value.contains(it)) {
-                    _scannedDevices.value += it
+                if (!_state.value.deviceList.contains(it)) {
+                    Log.d(TAG, "onScanResult: Value in service")
+                    val updatedDeviceList = _state.value.deviceList + it
+                    _state.value = _state.value.copy(
+                        deviceList = updatedDeviceList
+                    )
                 }
             }
         }
@@ -128,7 +140,7 @@ class BleForegroundService : Service() {
     }
 
     @SuppressLint("MissingPermission")
-    fun scanLeDevice() {
+    private fun scanLeDevice() {
         if (bluetoothLeScanner == null) {
             Log.e(TAG, "scanLeDevice: Bluetooth Scanner not found")
             return
@@ -142,7 +154,8 @@ class BleForegroundService : Service() {
             .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
             .build()
         if (!scanning) {
-            handler.postDelayed({
+            handler = Looper.myLooper()?.let { Handler(it) }
+            handler?.postDelayed({
                 scanning = false
                 bluetoothLeScanner!!.stopScan(leScanCallback)
             }, 10000)
@@ -155,17 +168,16 @@ class BleForegroundService : Service() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun sendLedState(state: Int) {
+    private fun sendLedState(state: ByteArray) {
         ledCharacteristic?.let { characteristic ->
-            val byteArray = byteArrayOf(state.toByte())
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 bluetoothGatt?.writeCharacteristic(
                     characteristic,
-                    byteArray,
+                    state,
                     BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
                 )
             } else {
-                characteristic.value = byteArray
+                characteristic.value = state
                 bluetoothGatt?.writeCharacteristic(characteristic)
             }
         }
@@ -229,6 +241,9 @@ class BleForegroundService : Service() {
             super.onCharacteristicChanged(gatt, characteristic, value)
             if (characteristic.uuid == java.util.UUID.fromString(GATT_CHARACTERISTIC_UUID)) {
                 val stringValue = value.toString(Charsets.UTF_8)
+//                sendLedState(counter)
+//                counter++
+//                counter %= 16
                 sendKeyNotification(stringValue)
             }
         }
@@ -236,10 +251,6 @@ class BleForegroundService : Service() {
 
 
     private fun sendKeyNotification(key: String) {
-        sendLedState(counter)
-        counter++
-        counter %= 16
-
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Key Pressed")
@@ -252,28 +263,47 @@ class BleForegroundService : Service() {
     }
 
     @SuppressLint("MissingPermission")
-    fun connectToDevice(address: String): Boolean {
+    private fun connectToDevice(address: String){
         bluetoothAdapter?.let { adapter ->
             try {
                 val device = adapter.getRemoteDevice(address)
                 bluetoothGatt = device.connectGatt(this, true, bluetoothGattCallback)
-                return true
             } catch (exception: IllegalArgumentException) {
                 Log.w(TAG, "Device not found with provided address.")
-                return false
             }
-        } ?: run {
-            Log.w(TAG, "BluetoothAdapter not initialized")
-            return false
         }
     }
 
     @SuppressLint("MissingPermission")
     override fun onDestroy() {
+        Log.d(TAG, "onDestroy: Service Destroyed")
         if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
             bluetoothGatt?.disconnect()
             bluetoothGatt?.close()
         }
         super.onDestroy()
     }
+
+    fun onEvent(event: ServiceEvent) {
+        when (event) {
+            is ServiceEvent.UpdateLedStates -> {
+                var byteValue = 0
+                for (i in event.newStates.indices) {
+                    if (event.newStates[i]) {
+                        byteValue = byteValue or (1 shl i)
+                    }
+                }
+                val byteArray = byteArrayOf(byteValue.toByte())
+                sendLedState(byteArray)
+            }
+
+            is ServiceEvent.ConnectToDevice -> {
+                connectToDevice(event.address)
+            }
+            ServiceEvent.ScanLeDevice -> {
+                scanLeDevice()
+            }
+        }
+    }
 }
+

@@ -29,7 +29,7 @@
         android:theme="@style/Theme.Automation"
         tools:targetApi="31">
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.MainActivity"
             android:exported="true"
             android:theme="@style/Theme.Automation">
             <intent-filter>
@@ -38,7 +38,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <service android:name=".BleForegroundService"
+        <service android:name=".data.BleForegroundService"
             android:foregroundServiceType="connectedDevice"
             android:exported="false">
 
