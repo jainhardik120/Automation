@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
-import androidx.activity.ComponentActivity.BIND_AUTO_CREATE
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,7 +44,7 @@ class ServiceConnector(
     fun startServiceAndBind() {
         val intent = Intent(context, BleForegroundService::class.java)
         context.startService(intent)
-        context.bindService(intent, connection, BIND_AUTO_CREATE)
+        context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
     }
 
     fun stopServiceAndUnbind() {
