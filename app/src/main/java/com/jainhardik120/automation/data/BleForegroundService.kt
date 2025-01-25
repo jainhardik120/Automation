@@ -167,17 +167,18 @@ class BleForegroundService : Service() {
         }
     }
 
+
     @SuppressLint("MissingPermission")
-    private fun sendLedState(state: ByteArray) {
-        ledCharacteristic?.let { characteristic ->
+    private fun writeData(bleCharacteristic: BluetoothGattCharacteristic?, data: ByteArray) {
+        bleCharacteristic?.let { characteristic ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 bluetoothGatt?.writeCharacteristic(
                     characteristic,
-                    state,
+                    data,
                     BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
                 )
             } else {
-                characteristic.value = state
+                characteristic.value = data
                 bluetoothGatt?.writeCharacteristic(characteristic)
             }
         }
@@ -294,7 +295,7 @@ class BleForegroundService : Service() {
                     }
                 }
                 val byteArray = byteArrayOf(byteValue.toByte())
-                sendLedState(byteArray)
+                writeData(ledCharacteristic, byteArray)
             }
 
             is ServiceEvent.ConnectToDevice -> {
@@ -302,6 +303,9 @@ class BleForegroundService : Service() {
             }
             ServiceEvent.ScanLeDevice -> {
                 scanLeDevice()
+            }
+            is ServiceEvent.SendKeypadData -> {
+                writeData(keypadCharacteristic, event.data)
             }
         }
     }

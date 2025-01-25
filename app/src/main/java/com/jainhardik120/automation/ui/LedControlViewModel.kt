@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.jainhardik120.automation.data.ServiceConnector
 import com.jainhardik120.automation.data.ServiceEvent
 import com.jainhardik120.automation.data.ServiceState
+import com.jainhardik120.automation.data.toCreateInstructionPacket
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,17 +43,11 @@ class LedControlViewModel @Inject constructor(
         )
     }
 
-    private val TAG = "LedControlViewModel"
-
-
     fun startService() {
         serviceConnector.startServiceAndBind()
-        serviceConnector.serviceState?.let { stateFlow ->
-            viewModelScope.launch {
-                stateFlow.collect { newServiceState ->
-                    Log.d(TAG, "new value in viewmodel")
-                    serviceState = newServiceState
-                }
+        viewModelScope.launch {
+            serviceConnector.serviceState.collect { newServiceState ->
+                serviceState = newServiceState
             }
         }
     }
@@ -65,7 +60,7 @@ class LedControlViewModel @Inject constructor(
         serviceConnector.sendEvent(ServiceEvent.ScanLeDevice)
     }
 
-    fun connectToDevice(address :String){
+    fun connectToDevice(address: String) {
         serviceConnector.sendEvent(ServiceEvent.ConnectToDevice(address))
     }
 
@@ -84,6 +79,15 @@ class LedControlViewModel @Inject constructor(
             ledStates = newLedStates
         )
         sendData()
+    }
+
+    fun sendCommand(){
+        val data = state.action.toCreateInstructionPacket(false)
+        serviceConnector.sendEvent(ServiceEvent.SendKeypadData(data))
+    }
+
+    fun onActionEditorEvent(event : ActionEditorEvent){
+        state = state.copy(action = getUpdatedActionState(state.action, event))
     }
 
 }

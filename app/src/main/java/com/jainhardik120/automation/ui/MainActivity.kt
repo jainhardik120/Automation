@@ -68,29 +68,6 @@ class MainActivity : ComponentActivity() {
                         verticalArrangement = Arrangement.Center
                     ) {
                         val viewModel: LedControlViewModel = hiltViewModel()
-                        Button(onClick = { viewModel.startService() }) {
-                            Text("Start Service")
-                        }
-                        Button(onClick = { viewModel.stopService() }) {
-                            Text("Stop Service")
-                        }
-                        Button(onClick = {
-                            viewModel.scanDevices()
-                        }) {
-                            Text("Scan Devices")
-                        }
-                        LazyColumn {
-                            itemsIndexed(viewModel.serviceState.deviceList) { index, item ->
-                                OutlinedCard(
-                                    onClick = {
-                                        viewModel.connectToDevice(item.address)
-                                    }
-                                ) {
-                                    Text(item.name ?: "N/A")
-                                    Text(item.address)
-                                }
-                            }
-                        }
                         LedControlScreen(viewModel)
                     }
                 }

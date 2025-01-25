@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
-import android.util.Log
 import androidx.activity.ComponentActivity.BIND_AUTO_CREATE
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
