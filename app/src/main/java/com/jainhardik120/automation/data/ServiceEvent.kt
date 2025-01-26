@@ -9,7 +9,24 @@ sealed class ServiceEvent{
         val gattCharacteristic: BluetoothGattCharacteristic,
         val enabled: Boolean
     ) : ServiceEvent()
-
     data class SendData(val gattCharacteristic: BluetoothGattCharacteristic, val data: ByteArray) :
-        ServiceEvent()
+        ServiceEvent() {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as SendData
+
+            if (gattCharacteristic != other.gattCharacteristic) return false
+            if (!data.contentEquals(other.data)) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = gattCharacteristic.hashCode()
+            result = 31 * result + data.contentHashCode()
+            return result
+        }
+    }
 }

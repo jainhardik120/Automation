@@ -64,6 +64,11 @@ fun LedControlScreen(viewModel: LedControlViewModel) {
                 }
                 item {
                     Text(if (viewModel.serviceState.currentServiceState.isConnected) "Connected" else "Not connected")
+                    Button(onClick = {
+                        viewModel.startListening()
+                    }) {
+                        Text("Start Listening")
+                    }
                 }
                 itemsIndexed(viewModel.serviceState.currentServiceState.deviceList) { _, item ->
                     OutlinedCard(
@@ -93,17 +98,7 @@ fun LedControlScreen(viewModel: LedControlViewModel) {
                         )
                     }
                 }
-                item {
-                    Column {
-                        ActionEditor(state.action, viewModel::onActionEditorEvent)
-                        Button(viewModel::sendCommand) {
-                            Text("Send Command")
-                        }
-                    }
-                }
             }
-
         }
     }
-
 }

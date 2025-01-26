@@ -20,11 +20,13 @@ import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
-import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import com.jainhardik120.automation.R
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -58,7 +60,6 @@ data class ServiceState(
 @AndroidEntryPoint
 class BleForegroundService : Service() {
     companion object {
-        private const val TAG = "BluetoothService"
         const val CHANNEL_ID = "ble_channel"
         const val CHANNEL_NAME = "Macro Pad Controller"
         private val CLIENT_CHARACTERISTIC_CONFIG_UUID =
@@ -68,7 +69,10 @@ class BleForegroundService : Service() {
 
     private val binder = BLEBinder()
     private val _state = MutableStateFlow(ServiceState())
-    private val _notificationFlow = MutableSharedFlow<BluetoothCallbackData>()
+    private val _notificationFlow = MutableSharedFlow<BluetoothCallbackData>(
+        replay = 1,  // Buffer last value
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
 
     private val bluetoothManager by lazy {
         getSystemService(BluetoothManager::class.java)
@@ -79,7 +83,6 @@ class BleForegroundService : Service() {
     private val bluetoothLeScanner by lazy {
         bluetoothAdapter?.bluetoothLeScanner
     }
-
     private var serviceRunning = false
 
     inner class BLEBinder : Binder() {
@@ -132,9 +135,8 @@ class BleForegroundService : Service() {
             updateScanState(true)
             bluetoothLeScanner?.startScan(null, scanSettings, leScanCallback)
 
-            // Auto-stop scanning after timeout
-            kotlinx.coroutines.MainScope().launch {
-                kotlinx.coroutines.delay(SCAN_TIMEOUT_MS)
+            MainScope().launch {
+                delay(SCAN_TIMEOUT_MS)
                 stopScan()
             }
         } else {
@@ -153,11 +155,8 @@ class BleForegroundService : Service() {
             result.device?.let { device ->
                 updateDeviceList(device)
             }
-            stopScan()
         }
-
         override fun onScanFailed(errorCode: Int) {
-            Log.e(TAG, "Scan failed with error code: $errorCode")
             updateScanState(false)
         }
     }
@@ -184,6 +183,7 @@ class BleForegroundService : Service() {
         }
     }
 
+    @Suppress("DEPRECATION")
     @SuppressLint("MissingPermission")
     private fun writeData(
         characteristic: BluetoothGattCharacteristic, data: ByteArray
@@ -200,6 +200,7 @@ class BleForegroundService : Service() {
         }
     }
 
+    @Suppress("DEPRECATION")
     @SuppressLint("MissingPermission")
     private fun enableNotification(
         characteristic: BluetoothGattCharacteristic, enabled: Boolean
