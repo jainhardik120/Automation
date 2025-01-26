@@ -1,20 +1,15 @@
 package com.jainhardik120.automation.ui
 
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.jainhardik120.automation.data.ServiceConnectionState
 import com.jainhardik120.automation.data.ServiceConnector
 import com.jainhardik120.automation.data.ServiceEvent
-import com.jainhardik120.automation.data.ServiceState
 import com.jainhardik120.automation.data.toCreateInstructionPacket
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -25,11 +20,15 @@ class LedControlViewModel @Inject constructor(
 
     var state by mutableStateOf(LedControlState())
 
-    var serviceState by mutableStateOf(ServiceState())
+    var serviceState by mutableStateOf(ServiceConnectionState())
         private set
 
-
     init {
+        viewModelScope.launch {
+            serviceConnector.connectionState.collect { newServiceState ->
+                serviceState = newServiceState
+            }
+        }
         resetLedStates()
     }
 
@@ -45,11 +44,6 @@ class LedControlViewModel @Inject constructor(
 
     fun startService() {
         serviceConnector.startServiceAndBind()
-        viewModelScope.launch {
-            serviceConnector.serviceState.collect { newServiceState ->
-                serviceState = newServiceState
-            }
-        }
     }
 
     fun stopService() {
@@ -81,12 +75,12 @@ class LedControlViewModel @Inject constructor(
         sendData()
     }
 
-    fun sendCommand(){
+    fun sendCommand() {
         val data = state.action.toCreateInstructionPacket(false)
         serviceConnector.sendEvent(ServiceEvent.SendKeypadData(data))
     }
 
-    fun onActionEditorEvent(event : ActionEditorEvent){
+    fun onActionEditorEvent(event: ActionEditorEvent) {
         state = state.copy(action = getUpdatedActionState(state.action, event))
     }
 
