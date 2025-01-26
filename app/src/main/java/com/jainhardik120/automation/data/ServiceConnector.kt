@@ -38,7 +38,7 @@ class ServiceConnector(
         override fun onServiceConnected(componentName: ComponentName?, binder: IBinder?) {
             binder?.let {
                 val bleBinder = binder as BleForegroundService.BLEBinder
-                service = bleBinder.getService()
+                service = bleBinder.service
                 _connectionState.update {
                     it.copy(
                         isRunning = true,

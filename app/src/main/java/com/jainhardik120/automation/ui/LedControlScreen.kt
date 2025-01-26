@@ -62,6 +62,9 @@ fun LedControlScreen(viewModel: LedControlViewModel) {
                         }
                     }
                 }
+                item {
+                    Text(if (viewModel.serviceState.currentServiceState.isConnected) "Connected" else "Not connected")
+                }
                 itemsIndexed(viewModel.serviceState.currentServiceState.deviceList) { _, item ->
                     OutlinedCard(
                         onClick = {
