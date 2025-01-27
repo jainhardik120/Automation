@@ -3,6 +3,7 @@ package com.jainhardik120.automation.data
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.Service
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
@@ -15,6 +16,7 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Binder
@@ -34,6 +36,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
+import javax.inject.Inject
 
 data class BluetoothCallbackData(
     val characteristic: BluetoothGattCharacteristic, val value: ByteArray
@@ -59,12 +62,18 @@ data class ServiceState(
 
 @AndroidEntryPoint
 class BleForegroundService : Service() {
+
+    @Inject
+    lateinit var sharedPreferences: SharedPreferences
+
     companion object {
         const val CHANNEL_ID = "ble_channel"
         const val CHANNEL_NAME = "Macro Pad Controller"
         private val CLIENT_CHARACTERISTIC_CONFIG_UUID =
             UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         private const val SCAN_TIMEOUT_MS = 10_000L
+
+        private const val LAST_DEVICE_KEY = "last_device"
     }
 
     private val binder = BLEBinder()
@@ -82,6 +91,9 @@ class BleForegroundService : Service() {
     }
     private val bluetoothLeScanner by lazy {
         bluetoothAdapter?.bluetoothLeScanner
+    }
+    private val notificationManager by lazy {
+        getSystemService(NOTIFICATION_SERVICE) as NotificationManager
     }
     private var serviceRunning = false
 
@@ -107,6 +119,14 @@ class BleForegroundService : Service() {
         return START_STICKY
     }
 
+    override fun onCreate() {
+        super.onCreate()
+        sharedPreferences.getString(LAST_DEVICE_KEY, "")?.let {
+            if (it.isEmpty()) return
+            connectToDevice(it)
+        }
+    }
+
     private fun startForegroundService() {
         val notification = createNotification("Waiting for device connection...")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -118,8 +138,14 @@ class BleForegroundService : Service() {
 
     private fun createNotification(text: String): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID).setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("BLE Service Running").setContentText(text).setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW).build()
+            .setContentTitle("Automation Service Running").setContentText(text).setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setAutoCancel(false).build()
+            .apply { flags = flags or Notification.FLAG_FOREGROUND_SERVICE }
+
+    private fun updateNotification(text: String) {
+        notificationManager.notify(1, createNotification(text))
+    }
 
     @SuppressLint("MissingPermission")
     private fun scanLeDevice() {
@@ -133,8 +159,8 @@ class BleForegroundService : Service() {
 
         if (!_state.value.isScanning) {
             updateScanState(true)
+            _state.update { it.copy(deviceList = emptyList()) }
             bluetoothLeScanner?.startScan(null, scanSettings, leScanCallback)
-
             MainScope().launch {
                 delay(SCAN_TIMEOUT_MS)
                 stopScan()
@@ -156,6 +182,7 @@ class BleForegroundService : Service() {
                 updateDeviceList(device)
             }
         }
+
         override fun onScanFailed(errorCode: Int) {
             updateScanState(false)
         }
@@ -176,11 +203,14 @@ class BleForegroundService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun connectToDevice(address: String) {
-        bluetoothAdapter?.getRemoteDevice(address)?.let { device ->
-            _state.update {
-                it.copy(bluetoothGatt = device.connectGatt(this, true, bluetoothGattCallback))
-            }
-        }
+        bluetoothAdapter?.getRemoteDevice(address)?.connectGatt(this, true, bluetoothGattCallback)
+        sharedPreferences.edit().putString(LAST_DEVICE_KEY, address).apply()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun disconnectDevice() {
+        _state.value.bluetoothGatt?.disconnect()
+        sharedPreferences.edit().remove(LAST_DEVICE_KEY).apply()
     }
 
     @Suppress("DEPRECATION")
@@ -189,7 +219,6 @@ class BleForegroundService : Service() {
         characteristic: BluetoothGattCharacteristic, data: ByteArray
     ) {
         val gatt = _state.value.bluetoothGatt ?: return
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             gatt.writeCharacteristic(
                 characteristic, data, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
@@ -206,13 +235,10 @@ class BleForegroundService : Service() {
         characteristic: BluetoothGattCharacteristic, enabled: Boolean
     ) {
         val gatt = _state.value.bluetoothGatt ?: return
-
         gatt.setCharacteristicNotification(characteristic, enabled)
-
         characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG_UUID)?.let { descriptor ->
             val value = if (enabled) BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             else BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
-
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 gatt.writeDescriptor(descriptor, value)
             } else {
@@ -226,10 +252,16 @@ class BleForegroundService : Service() {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             _state.update {
-                it.copy(isConnected = newState == BluetoothProfile.STATE_CONNECTED)
+                it.copy(
+                    isConnected = (newState == BluetoothProfile.STATE_CONNECTED),
+                    bluetoothGatt = if (newState == BluetoothProfile.STATE_CONNECTED) gatt else null
+                )
             }
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 gatt.discoverServices()
+                updateNotification("Connected to ${gatt.device.name}")
+            } else {
+                updateNotification("Waiting for device connection...")
             }
         }
 
@@ -263,11 +295,11 @@ class BleForegroundService : Service() {
     fun onEvent(event: ServiceEvent) {
         when (event) {
             is ServiceEvent.ConnectToDevice -> connectToDevice(event.address)
+            is ServiceEvent.DisconnectDevice -> disconnectDevice()
             is ServiceEvent.ScanLeDevice -> scanLeDevice()
             is ServiceEvent.SendData -> writeData(event.gattCharacteristic, event.data)
             is ServiceEvent.EnableNotifications -> enableNotification(
-                event.gattCharacteristic,
-                event.enabled
+                event.gattCharacteristic, event.enabled
             )
         }
     }

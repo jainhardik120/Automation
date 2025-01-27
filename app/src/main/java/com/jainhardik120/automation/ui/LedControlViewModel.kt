@@ -44,6 +44,7 @@ class LedControlViewModel @Inject constructor(
             }
         }
         resetLedStates()
+        startService()
     }
 
     fun startListening() {
@@ -102,6 +103,10 @@ class LedControlViewModel @Inject constructor(
                 )
             )
         }
+    }
+
+    fun disconnect() {
+        serviceConnector.sendEvent(ServiceEvent.DisconnectDevice)
     }
 
     fun toggleLedState(index: Int) {

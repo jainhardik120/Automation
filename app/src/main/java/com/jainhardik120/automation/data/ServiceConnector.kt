@@ -76,6 +76,7 @@ class ServiceConnector(
     fun sendEvent(event: ServiceEvent) {
         service?.onEvent(event)
     }
+
     private fun collectServiceState(bleBinder: BleForegroundService.BLEBinder) {
         val scope = CoroutineScope(Dispatchers.IO + Job())
         scope.launch {

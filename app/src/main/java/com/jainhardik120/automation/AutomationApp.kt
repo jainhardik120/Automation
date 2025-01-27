@@ -17,7 +17,7 @@ class AutomationApp : Application() {
             val channel = NotificationChannel(
                 BleForegroundService.CHANNEL_ID,
                 BleForegroundService.CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_HIGH
+                NotificationManager.IMPORTANCE_MIN
             )
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)

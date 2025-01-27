@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothGattCharacteristic
 
 sealed class ServiceEvent{
     data object ScanLeDevice : ServiceEvent()
+    data object DisconnectDevice : ServiceEvent()
     data class ConnectToDevice(val address : String) : ServiceEvent()
     data class EnableNotifications(
         val gattCharacteristic: BluetoothGattCharacteristic,
