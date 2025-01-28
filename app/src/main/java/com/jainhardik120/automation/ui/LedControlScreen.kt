@@ -3,9 +3,7 @@ package com.jainhardik120.automation.ui
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -21,7 +19,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -29,9 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -127,35 +122,7 @@ fun LedControlScreen(viewModel: LedControlViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            LazyColumn(Modifier.fillMaxSize()) {
 
-            item {
-                    Text(if (viewModel.serviceState.currentServiceState.isConnected) "Connected" else "Not connected")
-                    Button(onClick = {
-                        viewModel.startListening()
-                    }) {
-                        Text("Start Listening")
-                    }
-                }
-                items(state.ledStates.size) { index ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "LED ${index + 1}",
-                            modifier = Modifier.weight(1f)
-                        )
-                        Switch(
-                            checked = state.ledStates[index],
-                            onCheckedChange = { viewModel.toggleLedState(index) },
-                            modifier = Modifier.padding(start = 16.dp)
-                        )
-                    }
-                }
-            }
         }
     }
 }

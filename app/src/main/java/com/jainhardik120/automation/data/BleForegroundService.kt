@@ -248,6 +248,17 @@ class BleForegroundService : Service() {
         }
     }
 
+    fun startListeningToKeyNotifications() {
+        val gatt = _state.value.bluetoothGatt ?: return
+        enableNotification(
+            gatt.getService(
+                UUID.fromString(
+                    "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+                )
+            ).getCharacteristic(UUID.fromString("beb5483e-36e1-4688-b7f5-ea07361b26a8")), true
+        )
+    }
+
     private val bluetoothGattCallback = object : BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
@@ -260,6 +271,7 @@ class BleForegroundService : Service() {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 gatt.discoverServices()
                 updateNotification("Connected to ${gatt.device.name}")
+                startListeningToKeyNotifications()
             } else {
                 updateNotification("Waiting for device connection...")
             }
@@ -298,9 +310,6 @@ class BleForegroundService : Service() {
             is ServiceEvent.DisconnectDevice -> disconnectDevice()
             is ServiceEvent.ScanLeDevice -> scanLeDevice()
             is ServiceEvent.SendData -> writeData(event.gattCharacteristic, event.data)
-            is ServiceEvent.EnableNotifications -> enableNotification(
-                event.gattCharacteristic, event.enabled
-            )
         }
     }
 }

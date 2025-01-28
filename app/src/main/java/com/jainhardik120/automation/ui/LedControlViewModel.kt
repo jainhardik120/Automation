@@ -47,19 +47,6 @@ class LedControlViewModel @Inject constructor(
         startService()
     }
 
-    fun startListening() {
-        val gatt = serviceState.currentServiceState.bluetoothGatt ?: return
-        serviceConnector.sendEvent(
-            ServiceEvent.EnableNotifications(
-                gatt.getService(
-                    UUID.fromString(
-                        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-                    )
-                ).getCharacteristic(UUID.fromString("beb5483e-36e1-4688-b7f5-ea07361b26a8")), true
-            )
-        )
-    }
-
     private fun resetLedStates() {
         val newLedStates = mutableListOf<Boolean>()
         for (i in 1..state.numLed) {
