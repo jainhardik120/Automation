@@ -6,16 +6,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.jainhardik120.automation.data.ServiceConnectionState
 import com.jainhardik120.automation.data.ServiceConnector
 import com.jainhardik120.automation.data.ServiceEvent
-import com.jainhardik120.automation.data.ServiceState
-import com.jainhardik120.automation.data.toCreateInstructionPacket
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
@@ -25,12 +23,41 @@ class LedControlViewModel @Inject constructor(
 
     var state by mutableStateOf(LedControlState())
 
-    var serviceState by mutableStateOf(ServiceState())
+    var serviceState by mutableStateOf(ServiceConnectionState())
         private set
 
+    companion object {
+        private const val TAG = "LedControlViewModel"
+    }
 
     init {
+        viewModelScope.launch {
+            launch {
+                serviceConnector.connectionState.collect { newServiceState ->
+                    serviceState = newServiceState
+                }
+            }
+            launch {
+                serviceConnector.notificationFlow.onEach {
+                    Log.d(TAG, "NotificationFlow: ${it.characteristic.uuid}")
+                }.collect()
+            }
+        }
         resetLedStates()
+        startService()
+    }
+
+    fun startListening() {
+        val gatt = serviceState.currentServiceState.bluetoothGatt ?: return
+        serviceConnector.sendEvent(
+            ServiceEvent.EnableNotifications(
+                gatt.getService(
+                    UUID.fromString(
+                        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+                    )
+                ).getCharacteristic(UUID.fromString("beb5483e-36e1-4688-b7f5-ea07361b26a8")), true
+            )
+        )
     }
 
     private fun resetLedStates() {
@@ -45,11 +72,6 @@ class LedControlViewModel @Inject constructor(
 
     fun startService() {
         serviceConnector.startServiceAndBind()
-        viewModelScope.launch {
-            serviceConnector.serviceState.collect { newServiceState ->
-                serviceState = newServiceState
-            }
-        }
     }
 
     fun stopService() {
@@ -65,7 +87,26 @@ class LedControlViewModel @Inject constructor(
     }
 
     private fun sendData() {
-        serviceConnector.sendEvent(ServiceEvent.UpdateLedStates(state.ledStates))
+        var byteValue = 0
+        for (i in state.ledStates.indices) {
+            if (state.ledStates[i]) {
+                byteValue = byteValue or (1 shl i)
+            }
+        }
+        val byteArray = byteArrayOf(byteValue.toByte())
+        serviceState.currentServiceState.bluetoothGatt?.getService(
+            UUID.fromString("4fafc202-1fb5-459e-8fcc-c5c9c331914b")
+        )?.getCharacteristic(UUID.fromString("beb5483f-36e1-4688-b7f5-ea07361b26a8"))?.let {
+            serviceConnector.sendEvent(
+                ServiceEvent.SendData(
+                    it, byteArray
+                )
+            )
+        }
+    }
+
+    fun disconnect() {
+        serviceConnector.sendEvent(ServiceEvent.DisconnectDevice)
     }
 
     fun toggleLedState(index: Int) {
@@ -81,12 +122,7 @@ class LedControlViewModel @Inject constructor(
         sendData()
     }
 
-    fun sendCommand(){
-        val data = state.action.toCreateInstructionPacket(false)
-        serviceConnector.sendEvent(ServiceEvent.SendKeypadData(data))
-    }
-
-    fun onActionEditorEvent(event : ActionEditorEvent){
+    fun onActionEditorEvent(event: ActionEditorEvent) {
         state = state.copy(action = getUpdatedActionState(state.action, event))
     }
 
