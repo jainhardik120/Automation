@@ -1,4 +1,4 @@
-package com.jainhardik120.automation.data
+package com.jainhardik120.automation.data.ble_service
 
 import android.bluetooth.BluetoothGattCharacteristic
 

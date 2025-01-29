@@ -6,9 +6,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.jainhardik120.automation.data.ServiceConnectionState
-import com.jainhardik120.automation.data.ServiceConnector
-import com.jainhardik120.automation.data.ServiceEvent
+import com.jainhardik120.automation.data.ble_service.ServiceConnectionState
+import com.jainhardik120.automation.data.ble_service.ServiceConnector
+import com.jainhardik120.automation.data.ble_service.ServiceEvent
+import com.jainhardik120.automation.data.database.MacropadDatabase
+import com.jainhardik120.automation.ui.home.LedControlState
+import com.jainhardik120.automation.ui.home.MacroPadEvent
+import com.jainhardik120.automation.utils.MacroAction
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach
@@ -17,8 +21,9 @@ import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
-class LedControlViewModel @Inject constructor(
-    private val serviceConnector: ServiceConnector
+class ApplicationViewModel @Inject constructor(
+    private val serviceConnector: ServiceConnector,
+    private val database: MacropadDatabase
 ) : ViewModel() {
 
     var state by mutableStateOf(LedControlState())
@@ -42,9 +47,33 @@ class LedControlViewModel @Inject constructor(
                     Log.d(TAG, "NotificationFlow: ${it.characteristic.uuid}")
                 }.collect()
             }
+            launch {
+                database.dao.getAllProfiles().onEach {
+                    state = state.copy(allProfiles = it)
+                }.collect()
+            }
         }
         resetLedStates()
         startService()
+        setupActions()
+    }
+
+    private fun setupActions() {
+        val macroActions = mutableListOf<MacroAction>()
+        for (i in 0..20) {
+            macroActions.add(MacroAction("Action $i"))
+        }
+        state = state.copy(
+            macroActions = macroActions
+        )
+    }
+
+    fun onEvent(event: MacroPadEvent) {
+        when (event) {
+            is MacroPadEvent.ActionClicked -> {
+
+            }
+        }
     }
 
     private fun resetLedStates() {
@@ -107,10 +136,6 @@ class LedControlViewModel @Inject constructor(
             ledStates = newLedStates
         )
         sendData()
-    }
-
-    fun onActionEditorEvent(event: ActionEditorEvent) {
-        state = state.copy(action = getUpdatedActionState(state.action, event))
     }
 
 }

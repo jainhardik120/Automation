@@ -1,9 +1,12 @@
 package com.jainhardik120.automation.di
 
+import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.room.Room
 import com.jainhardik120.automation.R
-import com.jainhardik120.automation.data.ServiceConnector
+import com.jainhardik120.automation.data.ble_service.ServiceConnector
+import com.jainhardik120.automation.data.database.MacropadDatabase
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -33,4 +36,15 @@ object ServiceModule {
             Context.MODE_PRIVATE
         )
     }
+
+
+    @Provides
+    @Singleton
+    fun provideDatabase(
+        app: Application
+    ): MacropadDatabase {
+        return Room.databaseBuilder(app, MacropadDatabase::class.java, "macropad_database")
+            .fallbackToDestructiveMigration().build()
+    }
+
 }

@@ -9,6 +9,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.app.ActivityCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.jainhardik120.automation.ui.home.LedControlScreen
+import com.jainhardik120.automation.ui.profile_edit.MacropadProfileEditViewModel
+import com.jainhardik120.automation.ui.profile_edit.ProfileEditScreen
 import com.jainhardik120.automation.ui.theme.AutomationTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -34,9 +40,31 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             AutomationTheme {
-                val viewModel: LedControlViewModel = hiltViewModel()
-                LedControlScreen(viewModel)
+                val navController = rememberNavController()
+                val viewModel: ApplicationViewModel = hiltViewModel()
+                NavHost(
+                    navController = navController,
+                    startDestination = AppRoutes.MacropadProfilesScreen
+                ) {
+                    composable<AppRoutes.MacropadProfilesScreen> {
+                        ProfileListScreen(
+                            viewModel = viewModel,
+                            onProfileClick = {
+                                navController.navigate(AppRoutes.MacroPadProfileEditScreen(it))
+                            })
+                    }
+                    composable<AppRoutes.MacroPadProfileEditScreen> {
+                        val macropadProfileEditViewModel =
+                            hiltViewModel<MacropadProfileEditViewModel>()
+                        ProfileEditScreen(viewModel = macropadProfileEditViewModel)
+                    }
+                    composable<AppRoutes.LedControl> {
+                        LedControlScreen(viewModel)
+                    }
+                }
             }
         }
     }
 }
+
+

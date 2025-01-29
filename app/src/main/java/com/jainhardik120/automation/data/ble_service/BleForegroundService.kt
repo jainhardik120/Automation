@@ -1,4 +1,4 @@
-package com.jainhardik120.automation.data
+package com.jainhardik120.automation.data.ble_service
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -37,28 +37,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
-
-data class BluetoothCallbackData(
-    val characteristic: BluetoothGattCharacteristic, val value: ByteArray
-) {
-    override fun equals(other: Any?) = when {
-        this === other -> true
-        javaClass != other?.javaClass -> false
-        else -> {
-            other as BluetoothCallbackData
-            characteristic == other.characteristic && value.contentEquals(other.value)
-        }
-    }
-
-    override fun hashCode() = 31 * characteristic.hashCode() + value.contentHashCode()
-}
-
-data class ServiceState(
-    val isConnected: Boolean = false,
-    val isScanning: Boolean = false,
-    val bluetoothGatt: BluetoothGatt? = null,
-    val deviceList: List<BluetoothDevice> = emptyList()
-)
 
 @AndroidEntryPoint
 class BleForegroundService : Service() {
