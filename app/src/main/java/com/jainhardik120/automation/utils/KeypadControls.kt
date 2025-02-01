@@ -1,29 +1,6 @@
-package com.jainhardik120.automation.data
+package com.jainhardik120.automation.utils
 
 import kotlin.math.min
-
-enum class MouseActions(val code: Int) {
-    MOUSE_MOVE(145),
-    MOUSE_SCROLL_UP(146),
-    MOUSE_SCROLL_DOWN(147),
-    MOUSE_BUTTON_LEFT(153),
-    MOUSE_BUTTON_RIGHT(154),
-    MOUSE_BUTTON_MIDDLE(156)
-}
-
-sealed class KeyAction {
-    data class WriteString(val stringNum: Int) : KeyAction()
-    data class MacroAction(val noOfSteps: Int, val actions: List<KeyAction>) : KeyAction()
-    data class KeyCombo(val noOfKeys: Int, val keys: List<Int>) : KeyAction()
-    data class SimSingleKey(val key: Int) : KeyAction()
-    data class SingleKeyPress(val key: Int) : KeyAction()
-    data class Delay(val multiplier: Int, val duration: Int) : KeyAction()
-    data class MouseMove(val x: Int, val y: Int) : KeyAction()
-    data class MouseAction(val action: MouseActions) : KeyAction()
-    data object SendPacketToController : KeyAction()
-    data class SendImmediateString(val string: String) : KeyAction()
-    data object Null : KeyAction()
-}
 
 const val NUM_KEYS_KEYPAD = 40
 const val NUM_STRINGS_KEYPAD = 64

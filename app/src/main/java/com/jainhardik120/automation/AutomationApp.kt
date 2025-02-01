@@ -5,7 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
-import com.jainhardik120.automation.data.BleForegroundService
+import com.jainhardik120.automation.data.ble_service.BleForegroundService
 import dagger.hilt.android.HiltAndroidApp
 
 

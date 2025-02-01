@@ -38,7 +38,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <service android:name=".data.BleForegroundService"
+        <service
+            android:name=".data.ble_service.BleForegroundService"
             android:foregroundServiceType="connectedDevice"
             android:exported="false">
 

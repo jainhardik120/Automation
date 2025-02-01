@@ -1,4 +1,4 @@
-package com.jainhardik120.automation.data
+package com.jainhardik120.automation.data.ble_service
 
 import android.app.job.JobScheduler
 import android.content.ComponentName
@@ -18,13 +18,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-data class ServiceConnectionState(
-    val isRunning: Boolean = false,
-    val isBound: Boolean = false,
-    val currentServiceState: ServiceState = ServiceState(),
-    val error: String? = null
-)
 
 class ServiceConnector(
     private val context: Context
