@@ -3,24 +3,37 @@
 #include <math.h>
 #include <Wire.h>
 
-byte rowPins[4] = { 12, 11, 10, 9 };
-byte colPins[4] = { 8, 7, 6, 5 };
-
-uint16_t currKeyStates;
-uint16_t prevKeyStates;
-
 #define NO_OF_KEYS 40
 #define NO_OF_STRINGS 64
 #define MAX_PROGRAM_SIZE 1024
 #define SLAVE_ADDRESS 0x08
 
+#define enc1A 5
+#define enc1B 4
+#define enc2A 0
+#define enc2B 1
+
+#define joy1S A5
+#define joy2S A4
+#define joy1X A3
+#define joy1Y A2
+#define joy2X A1
+#define joy2Y A0
+
+uint8_t rowPins[4] = { 9, 8, 7, 6 };
+uint8_t colPins[4] = { 13, 12, 11, 10 };
+
+uint8_t iData[MAX_PROGRAM_SIZE];
 uint16_t offsets[NO_OF_KEYS];
 uint16_t stringOffsets[NO_OF_STRINGS];
 
+uint64_t currKeyStates;
+uint64_t prevKeyStates;
 uint8_t lastKey = 0xff;
 
-uint8_t iData[MAX_PROGRAM_SIZE];
-
+uint8_t tempEncState;
+uint16_t center[4];
+uint8_t inversion = 0b1001;
 
 uint8_t *readAction(uint8_t *temp) {
   if ((*temp & 0xc0) == 0x00) {
@@ -68,17 +81,53 @@ void readData() {
 
 void scanKeys() {
   prevKeyStates = currKeyStates;
-  for (byte r = 0; r < 4; r++) {
-    pinMode(rowPins[r], INPUT_PULLUP);
-  }
+  currKeyStates = 0;
+
   for (byte c = 0; c < 4; c++) {
     pinMode(colPins[c], OUTPUT);
-    digitalWrite(colPins[c], 0);
+    digitalWrite(colPins[c], LOW);
     for (byte r = 0; r < 4; r++) {
-      bitWrite(currKeyStates, (r * 4) + c, !digitalRead(rowPins[r]));
+      currKeyStates |= uint64_t(!digitalRead(rowPins[r])) << ((r << 2) | c);
     }
-    digitalWrite(colPins[c], 1);
+    digitalWrite(colPins[c], HIGH);
     pinMode(colPins[c], INPUT);
+  }
+
+  tempEncState = (tempEncState & ~0x02) | (digitalRead(enc1A) << 1);
+  if ((tempEncState & 0x03) == 1 || (tempEncState & 0x03) == 2) {
+    currKeyStates |= (1ULL << 16);
+    if (digitalRead(enc1B) ^ (tempEncState >> 1 & 1)) {
+      currKeyStates &= ~(1ULL << 17);
+    } else {
+      currKeyStates |= (1ULL << 17);
+    }
+  } else {
+    currKeyStates &= ~(1ULL << 16);
+  }
+  tempEncState = (tempEncState & ~0x01) | (tempEncState >> 1 & 0x01);
+
+  tempEncState = (tempEncState & ~0x08) | (digitalRead(enc2A) << 3);
+  if ((tempEncState & 0x0C) == 8 || (tempEncState & 0x0C) == 4) {
+    currKeyStates |= (1ULL << 18);
+    if (digitalRead(enc2B) ^ (tempEncState >> 3 & 1)) {
+      currKeyStates &= ~(1ULL << 19);
+    } else {
+      currKeyStates |= (1ULL << 19);
+    }
+  } else {
+    currKeyStates &= ~(1ULL << 18);
+  }
+  tempEncState = (tempEncState & ~0x04) | ((tempEncState & 0x08) >> 1);
+
+  uint8_t switchStates = ((~digitalRead(joy1S) & 1) << 2) | ((~digitalRead(joy2S) & 1) << 3);
+  currKeyStates |= (uint64_t)switchStates << 20;
+
+  for (int i = 0; i < 4; i++) {
+    int rawReading = analogRead(A3 - i);
+    int diff = rawReading - center[i];
+    int abs = (min(abs(diff), 511) >> 1);
+    uint16_t encodedValue = ((abs > 128)) | (((diff < 0) ^ ((inversion >> i) & 1)) << 1) | (abs << 2);
+    currKeyStates |= (uint64_t)encodedValue << (24 + i * 10);
   }
 }
 
@@ -112,9 +161,6 @@ void writeString(uint8_t *ptr, uint8_t len) {
   }
 }
 
-// state 0 means released
-// state 1 means currently pressed
-
 uint8_t *handleAction(uint8_t *temp, bool state, uint8_t keynum) {
   if ((*temp & 0xc0) == 0x00) {
     if (state) {
@@ -139,7 +185,6 @@ uint8_t *handleAction(uint8_t *temp, bool state, uint8_t keynum) {
         } else {
           Keyboard.release(*temp);
         }
-        delay(20);
       }
     }
     temp++;
@@ -160,7 +205,6 @@ uint8_t *handleAction(uint8_t *temp, bool state, uint8_t keynum) {
         }
         break;
       case 1:
-        // Single key press
         uint8_t *start = temp;
         if ((*temp & 0xf0) == 0x90) {
           temp = handleMouse(temp, true);
@@ -172,11 +216,10 @@ uint8_t *handleAction(uint8_t *temp, bool state, uint8_t keynum) {
         if ((*temp & 0xf0) == 0x90) {
           temp = handleMouse(temp, false);
         } else {
-          Keyboard.press(*temp);
+          Keyboard.release(*temp);
         }
         break;
       case 2:
-        // Delay (in ms)
         unsigned char power_of_10 = (*temp) & 0x0F;
         unsigned char number = ((*temp) >> 4) & 0x0F;
         delay(number * pow(10, power_of_10));
@@ -187,8 +230,6 @@ uint8_t *handleAction(uint8_t *temp, bool state, uint8_t keynum) {
     temp++;
   } else {
     if (*temp == 0xa0) {
-      // Send to BLE Server
-      Serial.println("Updating keynum");
       lastKey = keynum;
     } else if (*temp == 0xb0) {
       temp++;
@@ -212,12 +253,67 @@ void processKeypad() {
       handleKey(k, bitRead(currKeyStates, k));
     }
   }
+  if (bitRead(currKeyStates, 16)) {
+    handleKey(16 + bitRead(currKeyStates, 17), true);
+    handleKey(16 + bitRead(currKeyStates, 17), false);
+  }
+  if (bitRead(currKeyStates, 18)) {
+    handleKey(18 + bitRead(currKeyStates, 19), true);
+    handleKey(18 + bitRead(currKeyStates, 19), false);
+  }
+  for (byte k = 22; k < 24; k++) {
+    if (bitRead(currKeyStates, k) ^ bitRead(prevKeyStates, k)) {
+      handleKey(k, bitRead(currKeyStates, k));
+    }
+  }
+  for (byte j = 0; j < 4; j++) {
+    uint8_t prev = (prevKeyStates >> (24 + (j * 10))) & 0x03;
+    uint8_t curr = (currKeyStates >> (24 + (j * 10))) & 0x03;
+    if (!((prev & 1) | (curr & 1))) continue;
+    if ((prev ^ curr) == 0) continue;
+    if (prev & 1) {
+      handleKey(24 + (2 * j) + ((prev >> 1) & 1), false);
+    }
+    if (curr & 1) {
+      handleKey(24 + (2 * j) + ((curr >> 1) & 1), true);
+    }
+  }
 }
 
-void setup() {
-  Serial.begin(115200);
-  delay(3000);
-  Serial.println("Starting Keypad Scanner");
+void setPinModes() {
+  pinMode(enc1A, INPUT_PULLUP);
+  pinMode(enc1B, INPUT_PULLUP);
+  pinMode(enc2A, INPUT_PULLUP);
+  pinMode(enc2B, INPUT_PULLUP);
+
+  pinMode(joy1X, INPUT);
+  pinMode(joy1Y, INPUT);
+  pinMode(joy1S, INPUT_PULLUP);
+
+  pinMode(joy2X, INPUT);
+  pinMode(joy2Y, INPUT);
+  pinMode(joy2S, INPUT_PULLUP);
+
+  for (byte r = 0; r < 4; r++) {
+    pinMode(rowPins[r], INPUT_PULLUP);
+  }
+}
+
+void calibrateJoysticks() {
+  for (int i = 0; i < 10; i++) {
+    center[0] += analogRead(joy1X);
+    center[1] += analogRead(joy1Y);
+    center[2] += analogRead(joy2X);
+    center[3] += analogRead(joy2Y);
+    delay(1);
+  }
+  center[0] = center[0] / 10;
+  center[1] = center[1] / 10;
+  center[2] = center[2] / 10;
+  center[3] = center[3] / 10;
+}
+
+void initializeData() {
   uint8_t temp[] = {
     0x00,
     0x81, 0x92,
@@ -239,26 +335,31 @@ void setup() {
     0xa0,
     0xa0,
 
+    0x82, KEY_RIGHT_CTRL, '+',
+    0x82, KEY_RIGHT_CTRL, '-',
+    0x82, 0x85, 0xDA,
+    0x82, 0x85, 0xD9,
+
     0x00,
     0x00,
     0x00,
     0x00,
+
+    0xa0,
+    0xa0,
+    0xa0,
+    0xa0,
+
+    0xa0,
+    0xa0,
+    0xa0,
+    0xa0,
+
     0x00,
     0x00,
     0x00,
     0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
+
     0x00,
     0x00,
     0x00,
@@ -275,6 +376,15 @@ void setup() {
     iData[i] = temp[i];
   }
   readData();
+}
+
+void setup() {
+  Serial.begin(115200);
+  initializeData();
+  setPinModes();
+  calibrateJoysticks();
+  bitWrite(tempEncState, 0, digitalRead(enc1A));
+  bitWrite(tempEncState, 2, digitalRead(enc2A));
   Wire.begin(SLAVE_ADDRESS);
   Wire.onReceive(receiveEvent);
   Wire.onRequest(requestEvent);
@@ -285,7 +395,6 @@ void setup() {
 void loop() {
   scanKeys();
   processKeypad();
-  delay(100);
 }
 
 void receiveEvent(int bytes) {
@@ -306,10 +415,6 @@ void receiveEvent(int bytes) {
     for (int i = 0; i < receivedSize && Wire.available(); i++) {
       buffer[i] = Wire.read();
     }
-    for (int i = 0; i < receivedSize; i++) {
-      Serial.print((char)buffer[i]);
-    }
-    Serial.println("");
     handleAction(buffer, (instruction & 0x01), 41);
     delete[] buffer;
   }
